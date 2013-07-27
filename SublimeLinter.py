@@ -42,35 +42,6 @@ MARKS = {
     'illegal': ('', 'circle'),
 }
 
-# All available settings for SublimeLinter;
-# only these are inherited from SublimeLinter.sublime-settings
-ALL_SETTINGS = [
-    'annotations',
-    'csslint_options',
-    'gjslint_ignore',
-    'gjslint_options',
-    'javascript_linter',
-    'jshint_options',
-    'jslint_options',
-    'pep8',
-    'pep8_ignore',
-    'perl_linter',
-    'pyflakes_ignore',
-    'pyflakes_ignore_import_*',
-    'sublimelinter',
-    'sublimelinter_delay',
-    'sublimelinter_disable',
-    'sublimelinter_executable_map',
-    'sublimelinter_fill_outlines',
-    'sublimelinter_gutter_marks',
-    'sublimelinter_mark_style',
-    'sublimelinter_notes',
-    'sublimelinter_objj_check_ascii',
-    'sublimelinter_popup_errors_on_save',
-    'sublimelinter_syntax_map',
-    'sublimelinter_wrap_find',
-]
-
 WHITESPACE_RE = re.compile(r'\s+')
 
 
@@ -140,14 +111,14 @@ def run_once(linter, view, **kwargs):
 
     add_lint_marks(view, lines, error_underlines, violation_underlines, warning_underlines)
 
-    if view.settings().get('sublimelinter_notes'):
+    if get_setting('sublimelinter_notes', view):
         highlight_notes(view)
 
     update_statusbar(view)
     end = time.time()
     TIMES[vid] = (end - start) * 1000  # Keep how long it took to lint
 
-    if kwargs.get('event', None) == 'on_post_save' and view.settings().get('sublimelinter_popup_errors_on_save'):
+    if kwargs.get('event', None) == 'on_post_save' and get_setting('sublimelinter_popup_errors_on_save', view):
         popup_error_list(view)
 
 
@@ -335,7 +306,7 @@ def find_underline_within(view, region):
 
 
 def syntax_name(view):
-    syntax = os.path.basename(view.settings().get('syntax'))
+    syntax = os.path.basename(get_setting('syntax', view))
     syntax = os.path.splitext(syntax)[0]
     return syntax
 
@@ -418,7 +389,7 @@ def queue_linter(linter, view, timeout=-1, preemptive=False, event=None):
         erase_lint_marks(view)  # may have changed file type and left marks behind
 
         # No point in queuing anything if no linters will run
-        if not view.settings().get('sublimelinter_notes'):
+        if not get_setting('sublimelinter_notes', view):
             return
 
     if preemptive:
@@ -616,28 +587,14 @@ def reload_view_module(view):
             break
 
 
-def settings_changed():
-    for window in sublime.windows():
-        for view in window.views():
-            linter = select_linter(view)
+def get_setting(key, view=None):
+    '''Returns setting value that was saved to view
+    If not found, returns setting from load_settings()'''
+    if view and view.settings().get(key) is not None:
+        return view.settings().get(key)
 
-            if (linter):
-                reload_settings(view)
-
-
-def reload_settings(view):
-    '''Restores user settings.'''
-    settings_name = 'SublimeLinter'
-    settings = sublime.load_settings(settings_name + '.sublime-settings')
-    settings.clear_on_change(settings_name)
-    settings.add_on_change(settings_name, settings_changed)
-
-    for setting in ALL_SETTINGS:
-        if settings.get(setting) is not None:
-            view.settings().set(setting, settings.get(setting))
-
-    if view.settings().get('sublimelinter') is not None:
-        view.settings().set('sublimelinter', True)
+    settings = sublime.load_settings('SublimeLinter.sublime-settings')
+    return settings.get(key)
 
 
 class LintCommand(sublime_plugin.TextCommand):
@@ -672,9 +629,8 @@ class LintCommand(sublime_plugin.TextCommand):
             self._run(lc_action)
 
     def reset(self):
-        '''Removes existing lint marks and restores user settings.'''
+        '''Removes existing lint marks.'''
         erase_lint_marks(self.view)
-        reload_settings(self.view)
 
     def on(self):
         '''Turns background linting on.'''
@@ -715,7 +671,7 @@ class BackgroundLinter(sublime_plugin.EventListener):
         if view.is_scratch():
             return
 
-        if view.settings().get('sublimelinter') is not True:
+        if get_setting('sublimelinter', view) is not True:
             erase_lint_marks(view)
             return
 
@@ -732,15 +688,13 @@ class BackgroundLinter(sublime_plugin.EventListener):
         queue_linter(linter, view)
 
     def on_load(self, view):
-        reload_settings(view)
-
-        if view.is_scratch() or view.settings().get('sublimelinter') is False or view.settings().get('sublimelinter') == 'save-only':
+        if view.is_scratch() or get_setting('sublimelinter', view) is False or get_setting('sublimelinter', view) == 'save-only':
             return
 
         queue_linter(select_linter(view), view, event='on_load')
 
     def on_post_save(self, view):
-        if view.is_scratch() or view.settings().get('sublimelinter') is False:
+        if view.is_scratch() or get_setting('sublimelinter', view) is False:
             return
 
         reload_view_module(view)
@@ -914,7 +868,7 @@ class SublimelinterLintCommand(SublimelinterCommand):
         if enabled:
             view = self.window.active_view()
 
-            if view and view.settings().get('sublimelinter') is True:
+            if view and get_setting('sublimelinter', view) is True:
                 return False
 
         return enabled
@@ -932,7 +886,7 @@ class SublimelinterEnableLoadSaveCommand(SublimelinterCommand):
         if enabled:
             view = self.window.active_view()
 
-            if view and view.settings().get('sublimelinter') == 'load-save':
+            if view and get_setting('sublimelinter', view) == 'load-save':
                 return False
 
         return enabled
@@ -945,7 +899,7 @@ class SublimelinterEnableSaveOnlyCommand(SublimelinterCommand):
         if enabled:
             view = self.window.active_view()
 
-            if view and view.settings().get('sublimelinter') == 'save-only':
+            if view and get_setting('sublimelinter', view) == 'save-only':
                 return False
 
         return enabled
@@ -958,7 +912,7 @@ class SublimelinterDisableCommand(SublimelinterCommand):
         if enabled:
             view = self.window.active_view()
 
-            if view and view.settings().get('sublimelinter') is False:
+            if view and get_setting('sublimelinter', view) is False:
                 return False
 
         return enabled
